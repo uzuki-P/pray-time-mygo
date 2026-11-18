@@ -2,20 +2,28 @@
   "name": "Pray Time",
   "slug": "pray-time",
   "identifier": "dev.praytime.mygo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "copyright": "© 2026 Uzuki-P",
   "license": "MIT",
   "out": "build",
   "linux": {
     "maintainer": "Uzuki-P",
     "comment": "Prayer times, countdown and due reminders in the tray",
-    "categories": ["Utility"],
+    "categories": [
+      "Utility"
+    ],
     "webview": false,
     "command": "pray-time",
     "depends": {
-      "deb": ["libayatana-appindicator3-1"],
-      "rpm": ["libayatana-appindicator-gtk3"],
-      "arch": ["libayatana-appindicator"]
+      "deb": [
+        "libayatana-appindicator3-1"
+      ],
+      "rpm": [
+        "libayatana-appindicator-gtk3"
+      ],
+      "arch": [
+        "libayatana-appindicator"
+      ]
     }
   }
 }

@@ -19,10 +19,12 @@ import (
 )
 
 const (
-	popupWidth     = 280
-	popupHeight    = 372
-	reminderWidth  = 340
-	reminderHeight = 170
+	popupWidth  = 280
+	popupHeight = 372
+	// The reminder's window holds its card with room around it for the
+	// shadow, and below it for the snooze droop and sink.
+	reminderWidth  = cardWidth + 2*cardInset
+	reminderHeight = 148 + 28
 	settingsWidth  = 380
 	settingsHeight = 580
 	screenMargin   = 12
@@ -59,9 +61,9 @@ type app struct {
 	// The reminder window.
 	testReminder bool
 	testPrayer   prayer.Time
-	outcome      outcome
-	outcomeText  string
-	outcomeUntil time.Time
+	anim         outcome    // the card's mark-as-prayed or snooze sequence
+	animStart    time.Time  // set by the first frame of the sequence
+	burst        [2]float32 // the mark-as-prayed button's center in the card
 
 	// The settings window.
 	tab           int
@@ -160,7 +162,11 @@ func panelOptions(title string, w, h int, view func(*ui.Context)) mygo.WindowOpt
 
 func (a *app) ready() {
 	a.popup = mygo.NewWindow(panelOptions("Pray Time", popupWidth, popupHeight, a.popupView))
-	a.reminderWin = mygo.NewWindow(panelOptions("Pray Time reminder", reminderWidth, reminderHeight, a.reminderView))
+	// The reminder draws its own rounded card, with a shadow, in a
+	// transparent window, so the card can move about in it.
+	reminder := panelOptions("Pray Time reminder", reminderWidth, reminderHeight, a.reminderView)
+	reminder.Transparent, reminder.DisableShadow, reminder.CornerRadius = true, true, 0
+	a.reminderWin = mygo.NewWindow(reminder)
 	// Settings is an ordinary window (in the taskbar, not kept above, not
 	// hidden on blur), so its drop-downs and other apps can take the focus.
 	settings := panelOptions("Pray Time Settings", settingsWidth, settingsHeight, a.settingsView)
@@ -332,6 +338,9 @@ func (a *app) showPopup() {
 	a.popup.Show()
 	a.popup.Focus()
 	// The reminder steps aside while the popup shows, as before.
+	if a.anim != outcomeNone && !a.testReminder {
+		a.finishAnimation()
+	}
 	if a.reminderWin.IsVisible() && !a.testReminder {
 		a.reminderWin.Hide()
 	}
@@ -376,35 +385,45 @@ func (a *app) selectRegion(r prayer.Region) {
 	a.tick()
 }
 
-// dismissReminder snoozes the due reminder, or hides it until the next
-// prayer is due, after a short "Okay…" confirmation.
+// dismissReminder plays the snooze sequence; at its end the reminder
+// snoozes, or hides until the next prayer is due.
 func (a *app) dismissReminder() {
-	if a.outcome != outcomeNone {
-		return
-	}
-	if a.testReminder {
-		a.finish(outcomeSnoozed, a.snoozedLabel())
-		return
-	}
-	a.rem.Dismiss(a.state.SnoozeEnabled(), a.state.SnoozeMinutes())
-	a.finish(outcomeSnoozed, a.snoozedLabel())
+	a.startAnimation(outcomeSnoozed)
 }
 
+// prayedFromReminder plays the mark-as-prayed sequence; at its end the
+// prayer is marked.
 func (a *app) prayedFromReminder() {
-	if a.outcome != outcomeNone {
-		return
-	}
-	p := a.reminderPrayer()
-	if !a.testReminder {
-		a.markPrayed(p, true)
-	}
-	a.finish(outcomePrayed, p.Name+" marked as prayed")
+	a.startAnimation(outcomePrayed)
 }
 
-func (a *app) finish(o outcome, text string) {
-	a.outcome, a.outcomeText = o, text
-	a.outcomeUntil = time.Now().Add(1400 * time.Millisecond)
-	a.reminderWin.Invalidate()
+func (a *app) startAnimation(o outcome) {
+	if a.anim != outcomeNone || a.reminderPrayer().Name == "" {
+		return
+	}
+	a.anim, a.animStart = o, time.Time{}
+	if a.reminderWin != nil {
+		a.reminderWin.Invalidate()
+	}
+}
+
+// finishAnimation does what the card's sequence was for, and hides it.
+func (a *app) finishAnimation() {
+	o, p, test := a.anim, a.reminderPrayer(), a.testReminder
+	a.anim, a.animStart, a.testReminder = outcomeNone, time.Time{}, false
+	if a.reminderWin != nil {
+		a.reminderWin.Hide()
+	}
+	if test {
+		return
+	}
+	switch o {
+	case outcomePrayed:
+		a.markPrayed(p, true)
+	case outcomeSnoozed:
+		a.rem.Dismiss(a.state.SnoozeEnabled(), a.state.SnoozeMinutes())
+		a.tick()
+	}
 }
 
 func (a *app) snoozedLabel() string {
@@ -432,7 +451,7 @@ func (a *app) showTestReminder() {
 		p = day.Times[len(day.Times)-1]
 	}
 	a.testPrayer, a.testReminder = p, true
-	a.outcome = outcomeNone
+	a.anim, a.animStart = outcomeNone, time.Time{}
 	a.showReminder()
 }
 
@@ -451,13 +470,8 @@ func (a *app) tick() {
 	a.rem.OnTick(due, ok, a.state.SnoozeEnabled())
 
 	if a.reminderWin != nil {
-		if a.outcome != outcomeNone {
-			if !time.Now().Before(a.outcomeUntil) {
-				a.outcome = outcomeNone
-				a.testReminder = false
-				a.reminderWin.Hide()
-			}
-		} else if !a.testReminder {
+		// While the card plays a sequence, its view finishes it.
+		if a.anim == outcomeNone && !a.testReminder {
 			show := a.rem.Visible && a.rem.HasCurrent && !a.popup.IsVisible()
 			if show && !a.reminderWin.IsVisible() {
 				a.showReminder()

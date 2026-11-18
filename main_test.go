@@ -109,6 +109,74 @@ func TestReminderShowsDuePrayer(t *testing.T) {
 	snapshot(t, light, "reminder-light")
 }
 
+func dueReminder(t *testing.T) (*app, prayer.Time) {
+	t.Helper()
+	a := testApp(t, afternoon)
+	due, ok := prayer.LatestDue(a.sched.Today(), a.sched.CompletedSet(), afternoon)
+	if !ok {
+		t.Fatal("nothing due")
+	}
+	a.rem.OnTick(due, ok, true)
+	return a, due
+}
+
+func TestReminderMarkAsPrayedPlaysThenMarks(t *testing.T) {
+	a, due := dueReminder(t)
+	tt := ui.NewTester(view(a, darkPalette, a.reminderBody), reminderWidth, reminderHeight)
+	if err := tt.Click("Mark as prayed"); err != nil {
+		t.Fatal(err)
+	}
+	if a.anim != outcomePrayed {
+		t.Fatal("no mark-as-prayed sequence")
+	}
+	tt.Advance(300 * time.Millisecond)
+	snapshot(t, tt, "reminder-prayed-flood")
+	if a.sched.IsCompleted(due) {
+		t.Fatal("marked before the sequence ended")
+	}
+	tt.Advance(600 * time.Millisecond)
+	snapshot(t, tt, "reminder-prayed-check")
+	if !tt.HasText("Asr marked as prayed") {
+		t.Errorf("texts %q", tt.Texts())
+	}
+	tt.Advance(time.Second)
+	if a.anim != outcomeNone || !a.sched.IsCompleted(due) {
+		t.Fatalf("anim %v, completed %v", a.anim, a.sched.IsCompleted(due))
+	}
+}
+
+func TestReminderSnoozePlaysThenSnoozes(t *testing.T) {
+	a, due := dueReminder(t)
+	tt := ui.NewTester(view(a, lightPalette, a.reminderBody), reminderWidth, reminderHeight)
+	if err := tt.Click("Snooze 10 min"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(700 * time.Millisecond)
+	snapshot(t, tt, "reminder-snoozed-droop")
+	if !tt.HasText("Okay… back in 10 min") {
+		t.Errorf("texts %q", tt.Texts())
+	}
+	if !a.rem.Visible {
+		t.Fatal("snoozed before the sequence ended")
+	}
+	tt.Advance(2 * time.Second)
+	if a.anim != outcomeNone || a.rem.Visible || a.sched.IsCompleted(due) {
+		t.Fatalf("anim %v, visible %v", a.anim, a.rem.Visible)
+	}
+}
+
+func TestSpringSettles(t *testing.T) {
+	if d := droopSpring.settle(1); d < 900 || d > 1300 {
+		t.Errorf("droop settles in %v ms", d)
+	}
+	if v := droopSpring.at(droopMillis+440, 440, 0, 1); v < 0.99 || v > 1.01 {
+		t.Errorf("droop at its end %v", v)
+	}
+	if v := pressSpring.at(80, 80, 0.92, 1); v != 0.92 {
+		t.Errorf("press starts at %v", v)
+	}
+}
+
 func TestSettingsSearchAndSelectRegion(t *testing.T) {
 	a := testApp(t, afternoon)
 	tt := ui.NewTester(view(a, darkPalette, a.settingsBody), settingsWidth, settingsHeight)

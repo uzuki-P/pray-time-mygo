@@ -58,12 +58,12 @@ func (a *app) settingsBody(c *ui.Context, p Palette) {
 	ui.Column(c).Fill().Background(p.Surface).Padding(12, 12, 16, 18).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).DragWindow().Padding(0, 0, 0, 0).Children(func() {
 			display(c, "Settings", 22, 700).TextColor(p.OnSurface).Grow(1)
-			if ui.Button(c, "✕").Label("Close settings").Size(30, 30).Clicked() && a.settingsWin != nil {
+			if closeButton(c, p, "Close settings") && a.settingsWin != nil {
 				a.settingsWin.Hide()
 			}
 		})
 		ui.Box(c).Height(8)
-		ui.Segmented(c, &a.tab, "Region", "Reminders", "General").Margin(0, 6, 0, 0)
+		ui.Segmented(c, &a.tab, "Region", "Reminders", "General").Margin(0, 6, 0, 0).Cursor(ui.CursorPointer)
 		ui.Box(c).Height(16)
 		ui.Column(c).Grow(1).Margin(0, 6, 0, 0).Children(func() {
 			switch a.tab {
@@ -247,24 +247,24 @@ func (a *app) remindersTab(c *ui.Context, p Palette) {
 			desc = "Snoozing hides the reminder, and it returns while the prayer is still not marked as prayed."
 		}
 		settingRow(c, p, "Snooze due reminders", desc, true, func() {
-			if ui.Switch(c, &a.snoozeOn).Label("Snooze due reminders").Changed() {
+			if ui.Switch(c, &a.snoozeOn).Label("Snooze due reminders").Cursor(ui.CursorPointer).Changed() {
 				a.state.SaveSnoozeEnabled(a.snoozeOn)
 			}
 		})
 		settingRow(c, p, "Snooze for", "", a.snoozeOn, func() {
 			figures(c, fmt.Sprintf("%d min", int(a.snoozeMinutes)), 13, 600).TextColor(p.OnSurface)
 			if ui.Stepper(c, &a.snoozeMinutes, store.MinReminderMinutes, store.MaxReminderMinutes, 1).
-				Label("Snooze minutes").Disabled(!a.snoozeOn).Changed() {
+				Label("Snooze minutes").Disabled(!a.snoozeOn).Cursor(ui.CursorPointer).Changed() {
 				a.state.SaveSnoozeMinutes(int(a.snoozeMinutes))
 				a.snoozeMinutes = float64(a.state.SnoozeMinutes())
 			}
 		})
 		settingRow(c, p, "Reminder position", "Where due reminders appear.", true, func() {
-			if ui.Select(c, &a.reminderPos, anchorLabels()).Label("Reminder position").Width(150).Changed() {
+			if ui.Select(c, &a.reminderPos, anchorLabels()).Label("Reminder position").Width(150).Cursor(ui.CursorPointer).Changed() {
 				a.state.SaveReminderAnchor(anchorFromLabel(a.reminderPos))
 			}
 		})
-		if ui.Button(c, "Show a test reminder").Clicked() {
+		if ui.Button(c, "Show a test reminder").Cursor(ui.CursorPointer).Clicked() {
 			a.showTestReminder()
 		}
 	})
@@ -273,14 +273,14 @@ func (a *app) remindersTab(c *ui.Context, p Palette) {
 func (a *app) generalTab(c *ui.Context, p Palette) {
 	ui.Scroll(c.Key("general")).Grow(1).Gap(18).Children(func() {
 		settingRow(c, p, "Theme", "", true, func() {
-			if ui.Segmented(c, &a.themeIndex, "System", "Light", "Dark").Changed() {
+			if ui.Segmented(c, &a.themeIndex, "System", "Light", "Dark").Cursor(ui.CursorPointer).Changed() {
 				a.state.SaveThemeMode(themeModes[a.themeIndex])
 				a.applyIcons()
 				a.invalidateAll()
 			}
 		})
 		settingRow(c, p, "Start on login", "Opens Pray Time in the tray when you sign in.", true, func() {
-			if ui.Switch(c, &a.autostart).Label("Start on login").Changed() {
+			if ui.Switch(c, &a.autostart).Label("Start on login").Cursor(ui.CursorPointer).Changed() {
 				a.autostartErr = ""
 				if err := mygo.App.SetOpenAtLogin(a.autostart); err != nil {
 					a.autostartErr = err.Error()
@@ -292,9 +292,37 @@ func (a *app) generalTab(c *ui.Context, p Palette) {
 			body(c, a.autostartErr, 11, 400).TextColor(p.Due)
 		}
 		settingRow(c, p, "Popup position", "Where the prayer times popup opens.", true, func() {
-			if ui.Select(c, &a.popupPos, anchorLabels()).Label("Popup position").Width(150).Changed() {
+			if ui.Select(c, &a.popupPos, anchorLabels()).Label("Popup position").Width(150).Cursor(ui.CursorPointer).Changed() {
 				a.state.SaveMainAnchor(anchorFromLabel(a.popupPos))
 			}
 		})
+		ui.Spacer(c)
+		figures(c, "Pray Time "+appVersion(), 11, 400).TextColor(p.Faint())
 	})
+}
+
+// appVersion is the version the build stamped (scripts/version), or "dev"
+// when the app runs from source.
+func appVersion() string {
+	if v := mygo.App.Version(); v != "" {
+		return v
+	}
+	return "dev"
+}
+
+// closeButton is a round ✕ drawn with lines, so it sits centered in its
+// circle whatever fonts the system has.
+func closeButton(c *ui.Context, p Palette, label string) bool {
+	b := ui.Box(c).Size(28, 28).Radius(14).Cursor(ui.CursorPointer).Role(ui.RoleButton).Focusable().Label(label)
+	color := p.Muted()
+	if b.Hovered() {
+		b.Background(p.OnSurface.Alpha(0.08))
+		color = p.OnSurface
+	}
+	b.Draw(func(pt *ui.Painter, r ui.Rect) {
+		cx, cy, h := r.X+r.W/2, r.Y+r.H/2, float32(4.5)
+		pt.StrokePolyline([][2]float32{{cx - h, cy - h}, {cx + h, cy + h}}, 1.6, color)
+		pt.StrokePolyline([][2]float32{{cx + h, cy - h}, {cx - h, cy + h}}, 1.6, color)
+	})
+	return b.Clicked()
 }

@@ -31,6 +31,11 @@ interface, with no JVM, webview or JavaScript.
   `~/.config/praytime/`), with the same file, keys and formats as the Kotlin app,
   so the two read each other's region, completions, recents and settings.
 - **Single instance:** starting the app again opens the running one's popup.
+- **Motion:** the Kotlin app's animations with its timings: marking a prayer
+  from the reminder floods the card teal with confetti and a drawn check
+  before it lifts away; snoozing shakes the card, drops it on one corner,
+  greys it and sinks it; a prayer's check pops in with a ring.
+- **Version:** shown at the bottom of Settings › General.
 - **Look:** the same palette, sky colours, and fonts (Reem Kufi and IBM Plex Sans, bundled
   under the SIL OFL; licenses in `assets/licenses`) and icons as the Kotlin app.
 
@@ -40,9 +45,8 @@ interface, with no JVM, webview or JavaScript.
 |---|---|---|
 | Linux tray: hand-rolled StatusNotifierItem with `ItemIsMenu=false`, so a left click toggles the popup | Linux tray uses AppIndicator: a click opens the menu, whose first item shows or hides the popup | MyGo's Linux tray is AppIndicator (`libayatana-appindicator3`), which always shows its menu on click and reports activation only on some desktops |
 | Custom-drawn right-click menu window | The system tray menu (Windows: right-click; Linux: any click) | MyGo's native tray menu replaces the hand-drawn one |
-| Reminder animations (confetti flood, check drawing, shake, droop and sink) | A short "marked as prayed" or "Okay… back in N min" confirmation, then the reminder hides | Simplified for the port; MyGo's animation APIs can bring them back later |
 | Settings: an undecorated window kept above others, closed when it loses focus | Settings: a frameless window in the taskbar that stays open until closed (✕ or Escape) | Its drop-downs open their own popup surface, which would take the focus and close it |
-| Transparent, rounded windows with drop shadows | Frameless windows with rounded corners on Windows 11; square on Linux | MyGo's transparent windows are for macOS and Windows 11 |
+| Transparent, rounded windows with drop shadows | The reminder is the same: a rounded card with a shadow in a transparent window. The popup and settings are frameless windows, rounded on Windows 11 and square on Linux | Only the reminder needs room around it (its animations move the card); a transparent window needs a compositor on Linux |
 | Wayland: AWT runs on XWayland | On a Wayland session the app restarts itself with `GDK_BACKEND=x11` (XWayland) | Wayland ignores window positions and keep-above; the corner anchors and the always-on-top reminder need X11, or `libgtk-layer-shell`. `PRAYTIME_WAYLAND=1` keeps native Wayland |
 | Display-change recovery for Compose's rendering | Panels are placed again whenever the displays change | MyGo has no stalled-renderer problem to recover from |
 | Start on login: XDG autostart file / HKCU Run key, written by the app | `App.SetOpenAtLogin` | MyGo manages its own XDG autostart entry (Linux) and HKCU Run entry (Windows); turn the Kotlin app's off if both are installed |

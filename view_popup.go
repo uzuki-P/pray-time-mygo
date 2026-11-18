@@ -167,14 +167,23 @@ func (a *app) scheduleRow(c *ui.Context, p Palette, t prayer.Time, cd prayer.Cou
 	})
 }
 
+// checkFlip is when a prayer check last turned completed.
+type checkFlip struct {
+	was bool
+	at  time.Time
+}
+
+var checkPop = spring{0.42, stiffnessMedium}
+
 // prayerCheck is the round check box of a prayer: teal and ticked when
 // completed, ringed in coral while due, faint until the prayer arrives.
+// Turning completed, it pops in from small and sends out a ring.
 func (a *app) prayerCheck(c *ui.Context, p Palette, name string, done, due, enabled bool) bool {
 	ring := p.OnSurface.Alpha(0.3)
 	if due {
 		ring = p.Due
 	}
-	fill := ui.Transparent
+	fill := p.Prayed.Alpha(0)
 	if done {
 		fill, ring = p.Prayed, p.Prayed
 	}
@@ -182,23 +191,55 @@ func (a *app) prayerCheck(c *ui.Context, p Palette, name string, done, due, enab
 	if done {
 		label = "Mark " + name + " as not prayed"
 	}
-	box := ui.Box(c).Size(checkSize, checkSize).Radius(checkSize/2).Background(fill).Border(2, ring).
-		Label(label).Disabled(!enabled)
-	if enabled {
-		box.Cursor(ui.CursorPointer)
-		if box.Hovered() && !done {
-			box.Background(ring.Alpha(0.15))
-		}
-	} else {
-		box.Opacity(0.45)
+
+	holder := ui.Box(c).Size(checkSize+8, checkSize+8).Center()
+	flip := ui.Local(holder, "flip", func() checkFlip { return checkFlip{was: done} })
+	if done && !flip.was {
+		flip.at = c.Now()
 	}
-	if done {
-		onPrayed := p.OnPrayed
-		box.Draw(func(pt *ui.Painter, r ui.Rect) {
-			x, y := r.X, r.Y
-			pt.StrokePolyline([][2]float32{{x + 6, y + 11.5}, {x + 9.5, y + 15}, {x + 16, y + 8}}, 2.2, onPrayed)
+	flip.was = done
+	pop, burst := float32(1), float32(1)
+	if !flip.at.IsZero() {
+		t := float64(c.Now().Sub(flip.at).Microseconds()) / 1000
+		pop = checkPop.at(t, 0, 0.55, 1)
+		burst = tween(t, 0, 380, 0, 1, fastOutSlowIn)
+		if t < checkPop.settle(0.45) || burst < 1 {
+			c.AnimationFrame()
+		} else {
+			flip.at = time.Time{}
+		}
+	}
+	if burst < 1 {
+		prayed := p.Prayed
+		holder.Draw(func(pt *ui.Painter, r ui.Rect) {
+			rad := checkSize / 2 * (1 + 0.9*burst)
+			cx, cy := r.X+r.W/2, r.Y+r.H/2
+			w := 1.5 * (1 - burst)
+			pt.Stroke(ui.Rect{X: cx - rad, Y: cy - rad, W: rad * 2, H: rad * 2}, prayed.Alpha(1-burst), rad, w)
 		})
 	}
+
+	var box ui.Element
+	holder.Children(func() {
+		box = ui.Box(c).Size(checkSize, checkSize).Radius(checkSize/2).Border(2, ring).
+			Label(label).Disabled(!enabled).Scale(pop, pop)
+		bg := box.AnimateColor("fill", fill, ui.Animation{Duration: 150 * time.Millisecond})
+		if enabled {
+			box.Cursor(ui.CursorPointer)
+			if box.Hovered() && !done {
+				bg = ring.Alpha(0.15)
+			}
+		} else {
+			box.Opacity(0.45)
+		}
+		box.Background(bg)
+		if done {
+			onPrayed := p.OnPrayed
+			box.Draw(func(pt *ui.Painter, r ui.Rect) {
+				strokeCheck(pt, r.X+r.W*0.15, r.Y+r.H*0.15, r.W*0.7, 2.2, 1, onPrayed)
+			})
+		}
+	})
 	return box.Clicked()
 }
 
