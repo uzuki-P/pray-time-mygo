@@ -1,0 +1,81 @@
+# Build Pray Time for Windows and Linux. mygo needs no cgo, so one Ubuntu
+# runner cross-compiles both: the Windows installer (NSIS) and the Linux
+# tarball with install.sh, plus .deb and .rpm packages.
+#
+# Pushes to main upload the staged builds as artifacts, which ci-fetch.timer
+# (dotconfig) downloads into _apk/ and shares through Gokapi; it polls this
+# file by its windows-exe.yml name. A v* tag publishes a GitHub release
+# instead (no artifact, so the timer does not share the same build twice).
+name: windows-exe
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore: ["**.md", "docs/**", ".scratch/**"]
+  workflow_dispatch:
+
+# A newer push supersedes a build still in progress.
+concurrency:
+  group: windows-exe-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Staged names carry the local time, as builds on the desktop do.
+      TZ: Asia/Jakarta
+    steps:
+      # Full history: the version is <major.minor>.<commit count>.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install NSIS
+        run: sudo apt-get update && sudo apt-get install -y nsis
+
+      - uses: extractions/setup-just@v3
+
+      - name: Test
+        run: just test
+
+      - name: Build and stage
+        run: just stage-all
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          name: pray-time-exe
+          path: _apk/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          name: pray-time-linux
+          path: _apk/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(cat build/version)
+          gh release create "$GITHUB_REF_NAME" --title "Pray Time $version" --generate-notes \
+            "build/windows-amd64/pray-time-setup-$version-amd64.exe" \
+            "build/linux-amd64/pray-time-$version-linux-amd64.tar.gz" \
+            build/linux-amd64/install.sh \
+            "build/linux-amd64/pray-time_${version}_amd64.deb" \
+            "build/linux-amd64/pray-time-$version-1.x86_64.rpm"

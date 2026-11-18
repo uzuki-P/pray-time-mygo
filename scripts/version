@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Prints the build version, <major.minor from mygo.json>.<commit count>, so
+# every commit builds a higher version, as the Kotlin app numbered its builds.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+base=$(jq -r '.version' mygo.json | cut -d. -f1,2)
+count=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+echo "$base.$count"

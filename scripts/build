@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Builds Pray Time with mygo for the given GOOS/GOARCH platforms (comma
+# separated, default linux/amd64), stamping mygo.json with scripts/version for
+# the build and restoring it afterwards. Windows installers need NSIS
+# (makensis); without it the Windows build has the executable alone.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+platforms=${1:-linux/amd64}
+version=$(scripts/version)
+
+cp mygo.json .mygo.json.orig
+trap 'mv -f .mygo.json.orig mygo.json' EXIT
+jq --arg v "$version" '.version = $v' .mygo.json.orig > mygo.json
+
+flags=()
+if [[ $platforms == *windows* ]] && ! command -v makensis >/dev/null; then
+  echo "makensis not found: building Windows without its installer." >&2
+  flags+=(-skip-installer)
+fi
+go tool mygo build -platform "$platforms" "${flags[@]}"
+echo "$version" > build/version
