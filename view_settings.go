@@ -63,7 +63,7 @@ func (a *app) settingsBody(c *ui.Context, p Palette) {
 			}
 		})
 		ui.Box(c).Height(8)
-		ui.Segmented(c, &a.tab, "Region", "Reminders", "General").Margin(0, 6, 0, 0).Cursor(ui.CursorPointer)
+		segmented(c, p, "Settings section", &a.tab, "Region", "Reminders", "General").track.Margin(0, 6, 0, 0)
 		ui.Box(c).Height(16)
 		ui.Column(c).Grow(1).Margin(0, 6, 0, 0).Children(func() {
 			switch a.tab {
@@ -252,9 +252,7 @@ func (a *app) remindersTab(c *ui.Context, p Palette) {
 			}
 		})
 		settingRow(c, p, "Snooze for", "", a.snoozeOn, func() {
-			figures(c, fmt.Sprintf("%d min", int(a.snoozeMinutes)), 13, 600).TextColor(p.OnSurface)
-			if ui.Stepper(c, &a.snoozeMinutes, store.MinReminderMinutes, store.MaxReminderMinutes, 1).
-				Label("Snooze minutes").Disabled(!a.snoozeOn).Cursor(ui.CursorPointer).Changed() {
+			if a.minutesStepper(c, p, a.snoozeOn) {
 				a.state.SaveSnoozeMinutes(int(a.snoozeMinutes))
 				a.snoozeMinutes = float64(a.state.SnoozeMinutes())
 			}
@@ -273,7 +271,7 @@ func (a *app) remindersTab(c *ui.Context, p Palette) {
 func (a *app) generalTab(c *ui.Context, p Palette) {
 	ui.Scroll(c.Key("general")).Grow(1).Gap(18).Children(func() {
 		settingRow(c, p, "Theme", "", true, func() {
-			if ui.Segmented(c, &a.themeIndex, "System", "Light", "Dark").Cursor(ui.CursorPointer).Changed() {
+			if segmented(c, p, "Theme", &a.themeIndex, "System", "Light", "Dark").changed {
 				a.state.SaveThemeMode(themeModes[a.themeIndex])
 				a.applyIcons()
 				a.invalidateAll()
@@ -325,4 +323,77 @@ func closeButton(c *ui.Context, p Palette, label string) bool {
 		pt.StrokePolyline([][2]float32{{cx + h, cy - h}, {cx - h, cy + h}}, 1.6, color)
 	})
 	return b.Clicked()
+}
+
+type segmentedResult struct {
+	track   ui.Element
+	changed bool
+}
+
+// segmented is the Kotlin app's segmented control, built on
+// ui.SegmentedBase so that each segment shows the pointer: the stock
+// control's segments set the arrow, over any cursor given to the whole.
+func segmented(c *ui.Context, p Palette, label string, selected *int, labels ...string) segmentedResult {
+	before := *selected
+	seg := ui.SegmentedBase(c, selected, len(labels))
+	seg.Track.Label(label).Padding(3).Radius(10).Background(p.Raised).Gap(2).Children(func() {
+		for i, l := range labels {
+			s := seg.Segment(i).Padding(5, 12).Radius(8).Label(l).Cursor(ui.CursorPointer)
+			chosen := i == *selected
+			weight, color := 500, p.Muted()
+			if chosen {
+				s.Background(p.Surface)
+				weight, color = 600, p.OnSurface
+			} else if s.Hovered() {
+				s.Background(p.OnSurface.Alpha(0.05))
+			}
+			s.Children(func() { body(c, l, 12, weight).TextColor(color) })
+		}
+	})
+	return segmentedResult{seg.Track, *selected != before}
+}
+
+// minutesStepper is the snooze length with − and + buttons, as the Kotlin
+// app showed it; it reports a change, already saved.
+func (a *app) minutesStepper(c *ui.Context, p Palette, enabled bool) bool {
+	changed := false
+	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		if stepButton(c, p, "Fewer snooze minutes", false, enabled && a.snoozeMinutes > store.MinReminderMinutes) {
+			a.snoozeMinutes--
+			changed = true
+		}
+		color := p.OnSurface
+		if !enabled {
+			color = p.Faint()
+		}
+		figures(c, fmt.Sprintf("%d min", int(a.snoozeMinutes)), 13, 600).TextColor(color).
+			MinWidth(50).TextAlign(ui.Center)
+		if stepButton(c, p, "More snooze minutes", true, enabled && a.snoozeMinutes < store.MaxReminderMinutes) {
+			a.snoozeMinutes++
+			changed = true
+		}
+	})
+	return changed
+}
+
+func stepButton(c *ui.Context, p Palette, label string, plus, enabled bool) bool {
+	b := ui.Box(c).Size(26, 26).Radius(13).Background(p.Raised).Role(ui.RoleButton).Focusable().
+		Label(label).Disabled(!enabled)
+	if enabled {
+		b.Cursor(ui.CursorPointer)
+		if b.Hovered() {
+			b.Background(p.Raised.Mix(p.OnSurface, 0.1))
+		}
+	} else {
+		b.Opacity(0.4)
+	}
+	color := p.OnSurface
+	b.Draw(func(pt *ui.Painter, r ui.Rect) {
+		cx, cy, h := r.X+r.W/2, r.Y+r.H/2, float32(5)
+		pt.Line(cx-h, cy, cx+h, cy, 1.6, color)
+		if plus {
+			pt.Line(cx, cy-h, cx, cy+h, 1.6, color)
+		}
+	})
+	return enabled && b.Clicked()
 }
