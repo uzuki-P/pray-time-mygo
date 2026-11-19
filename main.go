@@ -332,11 +332,29 @@ func (a *app) place(w *mygo.Window, anchor store.Anchor, width, height int) {
 	w.SetPosition(x, y)
 }
 
+// replace puts a panel at its anchor again once it shows: GTK applies the
+// position asynchronously and the window manager may move a window as it
+// maps, which left the popup cropped or off its corner. Later passes catch
+// a window manager that places it after the first.
+func (a *app) replace(w *mygo.Window, anchor store.Anchor, width, height int) {
+	for _, d := range []time.Duration{0, 60 * time.Millisecond, 200 * time.Millisecond} {
+		d := d
+		time.AfterFunc(d, func() {
+			mygo.RunOnMain(func() {
+				if w.IsVisible() {
+					a.place(w, anchor, width, height)
+				}
+			})
+		})
+	}
+}
+
 func (a *app) showPopup() {
 	a.place(a.popup, a.state.MainAnchor(), popupWidth, popupHeight)
 	a.suppressBlur = time.Now().Add(400 * time.Millisecond)
 	a.popup.Show()
 	a.popup.Focus()
+	a.replace(a.popup, a.state.MainAnchor(), popupWidth, popupHeight)
 	// The reminder steps aside while the popup shows, as before.
 	if a.anim != outcomeNone && !a.testReminder {
 		a.finishAnimation()
@@ -459,6 +477,7 @@ func (a *app) showReminder() {
 	a.place(a.reminderWin, a.state.ReminderAnchor(), reminderWidth, reminderHeight)
 	// Shown without taking the keyboard from what the user is doing.
 	a.reminderWin.ShowInactive()
+	a.replace(a.reminderWin, a.state.ReminderAnchor(), reminderWidth, reminderHeight)
 }
 
 // tick runs every second on the main thread: it rolls the day over,
